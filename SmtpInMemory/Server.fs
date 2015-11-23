@@ -67,7 +67,7 @@ type private ReaderWriter (sr:StreamReader, wr:StreamWriter) =
                     sr.Dispose()
                     wr.Dispose() 
 
-let private receiveEmail (listener:TcpListener) = async {
+let private receiveEmails (listener:TcpListener) = async {
 
     use! client = listener.AcceptTcpClientAsync() |> Async.AwaitTask
 
@@ -82,7 +82,7 @@ let private receiveEmail (listener:TcpListener) = async {
 
     readWriter.Write "220 localhost -- Fake proxy server"
    
-    let rec readlines email =
+    let rec readlines emailBuilder emails =
         let line = readWriter.Read()
 
         match line with
@@ -90,7 +90,7 @@ let private receiveEmail (listener:TcpListener) = async {
             readWriter.Write "354 Start input, end data with <CRLF>.<CRLF>"
             
             let header = 
-                email.Header
+                emailBuilder.Header
                 |> Seq.unfold(fun header ->
                     let line = readWriter.Read()
                     if line = null || line = "." || line = ""
@@ -115,19 +115,18 @@ let private receiveEmail (listener:TcpListener) = async {
                 )
                 |> List.ofSeq
                       
-            readWriter.Write "250 OK"
-            readlines {email with Header = header; Body = body}
+            readlines emptyEmail ({emailBuilder with Header = header; Body = body}::emails)
         | "QUIT" -> 
             readWriter.Write "250 OK"
-            email
+            emails
         | rest ->
             readWriter.Write "250 OK"
-            readlines email
+            readlines emailBuilder emails
                 
-    let newMessage = readlines emptyEmail
+    let newMessages = readlines emptyEmail []
 
     client.Close()
-    return newMessage }
+    return newMessages }
 
 let private smtpAgent (cachingAgent: Agent<CheckInbox>) port = 
     Agent.Start(fun _ -> 
@@ -136,15 +135,18 @@ let private smtpAgent (cachingAgent: Agent<CheckInbox>) port =
         listener.Start()
 
         let rec loop() = async {
-            let! newMessage = receiveEmail listener
+            let! newMessages = receiveEmails listener
             let valueOrEmptyString = function | Some s -> s | None -> ""
-            {   From=valueOrEmptyString newMessage.Header.From
-                To=valueOrEmptyString newMessage.Header.To
-                Subject=valueOrEmptyString newMessage.Header.Subject
-                Body=newMessage.Body
-                Headers=newMessage.Header.Headers   }
-            |> Add
-            |> cachingAgent.Post
+            newMessages
+            |> List.map(fun newMessage -> 
+                {   From=valueOrEmptyString newMessage.Header.From
+                    To=valueOrEmptyString newMessage.Header.To
+                    Subject=valueOrEmptyString newMessage.Header.Subject
+                    Body=newMessage.Body
+                    Headers=newMessage.Header.Headers   }
+                |> Add
+            )
+            |> List.iter cachingAgent.Post
             return! loop() }
 
         loop())
