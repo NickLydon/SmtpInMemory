@@ -33,29 +33,66 @@ let private (|From|To|Subject|Header|) (input:string) =
     | _::_::(true,input)::_ -> Subject input
     | _ -> Header input
 
+type private Message = | Received of string | Sent of string
+
+type private ReaderLines =
+    | Read of AsyncReplyChannel<string>
+    | Write of string
+    | GetAll of AsyncReplyChannel<Message list>
+
+type private ReaderWriter (sr:StreamReader, wr:StreamWriter) =
+    let agent = 
+        Agent.Start(fun inbox ->
+            let rec loop lines = async {
+                let! msg = inbox.Receive()
+                match msg with
+                | Read chan -> 
+                    let line = sr.ReadLine()
+                    chan.Reply line
+                    return! loop (Received(line)::lines)
+                | Write msg ->
+                    wr.WriteLine(msg)
+                    return! loop (Sent(msg)::lines)
+                | GetAll chan -> 
+                    chan.Reply lines
+                    return! loop lines }
+            loop [])
+
+    member this.Read() = agent.PostAndReply Read
+    member this.Write line = agent.Post(Write line)
+    member this.GetAll() = agent.PostAndReply GetAll
+
+    interface System.IDisposable with
+        member this.Dispose() = 
+                    sr.Dispose()
+                    wr.Dispose() 
+
 let private receiveEmail (listener:TcpListener) = async {
 
     use! client = listener.AcceptTcpClientAsync() |> Async.AwaitTask
 
     use stream = client.GetStream()
-    use sr = new StreamReader(stream)
-    use wr = new StreamWriter(stream)
-    wr.NewLine <- "\r\n"
-    wr.AutoFlush <- true
+    
+    use readWriter = 
+        let sr = new StreamReader(stream)
+        let wr = new StreamWriter(stream)
+        wr.NewLine <- "\r\n"
+        wr.AutoFlush <- true
+        new ReaderWriter(sr, wr)
 
-    wr.WriteLine("220 localhost -- Fake proxy server")
+    readWriter.Write "220 localhost -- Fake proxy server"
    
     let rec readlines email =
-        let line = sr.ReadLine()
+        let line = readWriter.Read()
 
         match line with
         | "DATA" -> 
-            wr.WriteLine("354 Start input, end data with <CRLF>.<CRLF>")
+            readWriter.Write "354 Start input, end data with <CRLF>.<CRLF>"
             
             let header = 
                 email.Header
                 |> Seq.unfold(fun header ->
-                    let line = sr.ReadLine()
+                    let line = readWriter.Read()
                     if line = null || line = "." || line = ""
                     then None
                     else
@@ -70,22 +107,22 @@ let private receiveEmail (listener:TcpListener) = async {
                 |> Seq.last
             
             let body = 
-                sr.ReadLine()
+                readWriter.Read()
                 |> Seq.unfold(fun line ->
                     if line = null || line = "." || line = ""
                     then None
-                    else Some(line, sr.ReadLine())
+                    else Some(line, readWriter.Read())
                 )
                 |> List.ofSeq
                       
-            wr.WriteLine("250 OK")
+            readWriter.Write "250 OK"
             readlines {email with Header = header; Body = body}
         | "QUIT" -> 
-            wr.WriteLine("250 OK")
+            readWriter.Write "250 OK"
             email
-        | _ -> 
-            wr.WriteLine("250 OK")
-            readlines email 
+        | rest ->
+            readWriter.Write "250 OK"
+            readlines email
                 
     let newMessage = readlines emptyEmail
 
