@@ -1,5 +1,4 @@
 ﻿using System;
-using NUnit;
 using NUnit.Framework;
 using Server = SMTP.Server;
 using System.Collections.Generic;
@@ -27,8 +26,8 @@ namespace Tests
 			if (emails.Count() >= emailCount)
 				return emails;
 			
-			await Task.Delay (100).ConfigureAwait(false);
-			return await BlockReadingEmails (sut, retryCount: retryCount - 1).ConfigureAwait(false);
+			await Task.Delay (50);
+			return await BlockReadingEmails (sut, emailCount, retryCount - 1);
 		}
 
 		[Test]
@@ -61,7 +60,7 @@ namespace Tests
 				sentEmail.Subject, 
 				sentEmail.From.ToString(), 
 				sentEmail.To.ToString(),
-				new Tuple<string,string>[] { });
+				new string[0]);
 
 			Assert.That(actual.From,Is.EqualTo(expected.From));
 			Assert.That(actual.To,Is.EqualTo(expected.To));
@@ -76,10 +75,10 @@ namespace Tests
                sentEmail.Subject, 
                sentEmail.From.ToString (), 
                sentEmail.To.ToString (),
-               sentEmail.Headers.AllKeys.Select (k => Tuple.Create (k, sentEmail.Headers.Get (k))).ToArray ());
+               sentEmail.Headers.AllKeys.Select (k => k + ": " + sentEmail.Headers.Get (k)));
 
 			foreach (var header in actual.Headers) {
-				Console.WriteLine ("Name: {0}; Value: {1}", header.Item1, header.Item2);
+				Console.WriteLine (header);
 			}
 
 			Assert.That(actual.From,Is.EqualTo(expected.From));
@@ -96,45 +95,50 @@ namespace Tests
 		public async Task Should_return_multiple_emails_when_sent()
 		{
 			var sut = GetSut ();
-			using (var sentEmail = new MailMessage ("from@a.com", "to@b.com", "subject", "body"))
-			using (var sentEmail2 = new MailMessage ("from2@a.com", "to2@b.com", "subject2", "body2"))
-			using (var client = new SmtpClient ("localhost", sut.Port)) {				
-				client.Send (sentEmail);
-				client.Send (sentEmail2);			
-				
-				var emails = (await BlockReadingEmails (sut, emailCount: 2).ConfigureAwait (false)).ToList ();
+		    var sentEmail = new MailMessage("from@a.com", "to@b.com", "subject", "body");
+		    var sentEmail2 = new MailMessage("from2@a.com", "to2@b.com", "subject2", "body2");
+		    using (var client = new SmtpClient("localhost", sut.Port))
+		    {
+		        client.Send(sentEmail);
+		    }
+		    using (var client = new SmtpClient("localhost", sut.Port))
+		    {
+                client.Send(sentEmail2);
+            }
 
-				Assert.That (emails.Count, Is.EqualTo (2));
+            var emails = (await BlockReadingEmails(sut, emailCount: 2)).ToList();
 
-				AssertEmailsAreEqual (emails [0], sentEmail2);
-				AssertEmailsAreEqual (emails [1], sentEmail);	
-			}
+            Assert.That(emails.Count, Is.EqualTo(2));
+
+            AssertEmailsAreEqual(emails[0], sentEmail2);
+            AssertEmailsAreEqual(emails[1], sentEmail);
 		}
 
 		[Test]
 		public async Task Should_not_include_empty_lines_in_body()
 		{
 			var sut = GetSut ();
-			using (var sentEmail = new MailMessage ("from@a.com", "to@b.com", "subject", string.Empty))
-			using (var client = new SmtpClient ("localhost", sut.Port)) {
-				client.Send (sentEmail);			
+		    var sentEmail = new MailMessage("from@a.com", "to@b.com", "subject", string.Empty);
+		    using (var client = new SmtpClient("localhost", sut.Port))
+		    {
+		        client.Send(sentEmail);
+		    }
 
-				var emails = await BlockReadingEmails (sut);
+		    var emails = await BlockReadingEmails (sut);
 
-				var actual = emails.Single ();
+			var actual = emails.Single ();
 
-				var expected = new SMTP.EMail (
-					new string[0], 
-					sentEmail.Subject, 
-					sentEmail.From.ToString (), 
-					sentEmail.To.ToString (),
-					new Tuple<string,string>[] { });
+			var expected = new SMTP.EMail (
+				new string[0], 
+				sentEmail.Subject, 
+				sentEmail.From.ToString (), 
+				sentEmail.To.ToString (),
+                new string[0]);
 
-				Assert.That (actual.From, Is.EqualTo (expected.From));
-				Assert.That (actual.To, Is.EqualTo (expected.To));
-				Assert.That (actual.Subject, Is.EqualTo (expected.Subject));
-				CollectionAssert.AreEqual (expected.Body, actual.Body);
-			}
+            Assert.That (actual.From, Is.EqualTo (expected.From));
+			Assert.That (actual.To, Is.EqualTo (expected.To));
+			Assert.That (actual.Subject, Is.EqualTo (expected.Subject));
+			CollectionAssert.AreEqual (expected.Body, actual.Body);
 		}
 
 		[TestCase("Subject")]
@@ -145,31 +149,30 @@ namespace Tests
 		[TestCase("MIME-Version")]
 		[TestCase("Priority")]
 		[TestCase("Date")]
-		public async Task Should_not_overwrite_fields_from_body(string field)
+		public async Task Should_not_overwrite_headers_from_body(string field)
 		{
 			var sut = GetSut ();
-			using (var sentEmail = new MailMessage ("from@a.com", "to@b.com", "subject", field + ": overwritten"))
-			using (var client = new SmtpClient ("localhost", sut.Port)) 
+		    var sentEmail = new MailMessage("from@a.com", "to@b.com", "subject", field + ": overwritten");
+
+		    using (var client = new SmtpClient("localhost", sut.Port))
 			{
-				client.Send (sentEmail);			
-
-				var emails = await BlockReadingEmails (sut);
-
-				var actual = emails.Single ();
-
-				var expected = new SMTP.EMail (
-					              new[] { sentEmail.Body }, 
-					              sentEmail.Subject, 
-					              sentEmail.From.ToString (), 
-					              sentEmail.To.ToString (),
-					              new Tuple<string,string>[] { });
-
-				Console.WriteLine (actual.Body);
-				Assert.That (actual.From, Is.EqualTo (expected.From));
-				Assert.That (actual.To, Is.EqualTo (expected.To));
-				Assert.That (actual.Subject, Is.EqualTo (expected.Subject));
-				CollectionAssert.AreEqual (expected.Body, actual.Body);
+			    client.Send(sentEmail);
 			}
+		    var emails = await BlockReadingEmails (sut);
+
+			var actual = emails.Single ();
+
+			var expected = new SMTP.EMail (
+				new[] { sentEmail.Body }, 
+				sentEmail.Subject, 
+				sentEmail.From.ToString (), 
+				sentEmail.To.ToString (),
+                new string[0]);
+
+            Assert.That (actual.From, Is.EqualTo (expected.From));
+			Assert.That (actual.To, Is.EqualTo (expected.To));
+			Assert.That (actual.Subject, Is.EqualTo (expected.Subject));
+			CollectionAssert.AreEqual (expected.Body, actual.Body);			
 		}
 	}
 }

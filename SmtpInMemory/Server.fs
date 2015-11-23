@@ -6,21 +6,23 @@ open System.IO
 
 type private Agent<'T> = MailboxProcessor<'T>
 
-type private EMailBuilder = { Body:string list; Subject:string option; From:string option; To:string option; Headers:(string*string) list }
+type private Header = { Subject: string option; From: string option; To: string option; Headers: string list }
 
-type EMail = { Body: string seq; Subject: string; From: string; To: string; Headers: (string*string) seq }
+type private EMailBuilder = { Body:string list; Header: Header }
 
-let private emptyEmail = { EMailBuilder.Body=[]; Subject=None; From=None; To=None; Headers=[] }
+type EMail = { Body: string seq; Subject: string; From: string; To: string; Headers: string seq }
+
+let private emptyHeader = { Header.Subject=None; From=None; To=None; Headers=[] }
+let private emptyEmail = { EMailBuilder.Body=[]; Header=emptyHeader }
 
 type private CheckInbox =
     | Get of AsyncReplyChannel<EMail seq>
     | Add of EMail
 
-let private (|From|To|Subject|Body|Header|) (input:string) =
+let private (|From|To|Subject|Header|) (input:string) =
     let fields = ["From";"To";"Subject"]
-    let headers = ["Content-Type";"MIME-Version";"Priority";"Date"]
     let addColon x = x |> List.map(fun x -> x + ": ")
-    let trimStart (x:string) = input.TrimStart(x.ToCharArray())
+    let trimStart (x:string) = input.Split([| x |], System.StringSplitOptions.None).[1..] |> Array.fold (+) ""
     let matches = 
         fields
         |> addColon
@@ -29,14 +31,7 @@ let private (|From|To|Subject|Body|Header|) (input:string) =
     | (true,input)::_ -> From input
     | _::(true,input)::_ -> To input
     | _::_::(true,input)::_ -> Subject input
-    | _ -> 
-        let matches = 
-            headers
-            |> List.zip (headers |> addColon)
-            |> List.filter (fst >> input.StartsWith)
-        match matches with
-        | [] -> Body input
-        | (withColon,name)::_ -> Header (name,(trimStart withColon))
+    | _ -> Header input
 
 let private receiveEmail (listener:TcpListener) = async {
 
@@ -56,34 +51,35 @@ let private receiveEmail (listener:TcpListener) = async {
         match line with
         | "DATA" -> 
             wr.WriteLine("354 Start input, end data with <CRLF>.<CRLF>")
-            let rec readdata (email:EMailBuilder) =
-                let line = sr.ReadLine()
-                if line = null || line = "." 
-                then email
-                else 
-                    let email =
-                        match line with
-                        | From l ->
-                            match email.From with
-                            | None -> { email with From = Some l }
-                            | _ -> { email with Body=line::email.Body }
-                        | To l ->
-                            match email.To with
-                            | None -> { email with To = Some l }
-                            | _ -> { email with Body=line::email.Body }
-                        | Subject l -> 
-                            match email.Subject with
-                            | None -> { email with Subject = Some l }
-                            | _ -> { email with Body=line::email.Body }                        
-                        | Header (name,_) when email.Headers |> Seq.map fst |> Seq.contains name -> {email with Body=line::email.Body}
-                        | Header l -> {email with Headers=l::email.Headers}
-                        | Body l when l <> "" -> {email with Body=l::email.Body}
-                        | Body _ -> email
-                    readdata email
-
-            let newlines = readdata email
+            
+            let header = 
+                email.Header
+                |> Seq.unfold(fun header ->
+                    let line = sr.ReadLine()
+                    if line = null || line = "." || line = ""
+                    then None
+                    else
+                        let header =
+                            match line with
+                            | From l -> { header with From = Some l }
+                            | To l ->{ header with To = Some l }
+                            | Subject l -> { header with Subject = Some l }
+                            | Header l -> {header with Headers=l::header.Headers }
+                        Some(header, header)
+                )
+                |> Seq.last
+            
+            let body = 
+                sr.ReadLine()
+                |> Seq.unfold(fun line ->
+                    if line = null || line = "." || line = ""
+                    then None
+                    else Some(line, sr.ReadLine())
+                )
+                |> List.ofSeq
+                      
             wr.WriteLine("250 OK")
-            readlines newlines
+            readlines {email with Header = header; Body = body}
         | "QUIT" -> 
             wr.WriteLine("250 OK")
             email
@@ -105,11 +101,11 @@ let private smtpAgent (cachingAgent: Agent<CheckInbox>) port =
         let rec loop() = async {
             let! newMessage = receiveEmail listener
             let valueOrEmptyString = function | Some s -> s | None -> ""
-            {   From=valueOrEmptyString newMessage.From
-                To=valueOrEmptyString newMessage.To
-                Subject=valueOrEmptyString newMessage.Subject
+            {   From=valueOrEmptyString newMessage.Header.From
+                To=valueOrEmptyString newMessage.Header.To
+                Subject=valueOrEmptyString newMessage.Header.Subject
                 Body=newMessage.Body
-                Headers=newMessage.Headers   }
+                Headers=newMessage.Header.Headers   }
             |> Add
             |> cachingAgent.Post
             return! loop() }
