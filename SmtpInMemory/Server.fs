@@ -99,12 +99,13 @@ let private receiveEmails (listener:TcpListener) = async {
                     if line = null || line = "." || line = ""
                     then None
                     else
+                        let header = { header with Headers=line::header.Headers }
                         let header =
                             match line with
                             | From l -> { header with From = l }
-                            | To l ->{ header with To = l }
+                            | To l -> { header with To = l }
                             | Subject l -> { header with Subject = Some l }
-                            | Header l -> {header with Headers=l::header.Headers }
+                            | _ -> header
                         Some(header, header)
                 )
                 |> Seq.last

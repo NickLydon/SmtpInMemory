@@ -202,11 +202,13 @@ namespace Tests
 		{
 			var body = msg.GetTextBody (MimeKit.Text.TextFormat.Text);
 			var expected = new SMTP.EMail (
-				string.IsNullOrEmpty(body) ? new string[0] : new[] { body }, 
+				string.IsNullOrEmpty (body) ? new string[0] : new[] { body }, 
 				msg.Subject, 
-				msg.From.Select(s => s.ToString()), 
-				msg.To.Select(s => s.ToString()),
-				new string[] { }); 
+				msg.From.Select (s => s.ToString ()), 
+				msg.To.Select (s => s.ToString ()),
+				msg.Headers
+					.Select (h => h.Field + ": " + h.Value)
+					.Concat (msg.Body.Headers.Select (h => h.ToString ())));
 
 			AssertEmailsAreEqual (actual, expected);
 		}
@@ -227,13 +229,9 @@ namespace Tests
 		private static void AssertEmailsAreEqual(SMTP.EMail actual, SMTP.EMail expected)
 		{
 			CollectionAssert.AreEqual (actual.From, expected.From);
-
 			Assert.That(actual.To,Is.EqualTo(expected.To));
 			Assert.That(actual.Subject,Is.EqualTo(expected.Subject));
-			Console.WriteLine (actual.Headers);
-			Console.WriteLine (expected.Headers);
-			//TODO: Get this line to work
-			//			CollectionAssert.AreEqual (expected.Headers, actual.Headers);
+			CollectionAssert.AreEquivalent (expected.Headers, actual.Headers);
 			CollectionAssert.AreEqual (expected.Body, actual.Body);
 		}
 
