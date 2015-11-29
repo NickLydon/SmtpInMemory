@@ -17,6 +17,7 @@ let private emptyEmail = { EMailBuilder.Body=[]; Header=emptyHeader }
 
 type private CheckInbox =
     | Get of AsyncReplyChannel<EMail seq>
+    | GetAndReset of AsyncReplyChannel<EMail seq>
     | Add of EMail
 
 let private (|From|To|Subject|Header|) (input:string) =
@@ -157,8 +158,11 @@ let private cachingAgent() =
             let! newMessage = inbox.Receive()
             match newMessage with
             | Get channel -> 
-                channel.Reply(messages)
+                channel.Reply messages
                 return! loop messages
+            | GetAndReset channel ->
+                channel.Reply messages
+                return! loop []
             | Add message -> 
                 return! loop (message::messages) }
         loop [])
@@ -170,4 +174,5 @@ type Server(port) =
     new() = Server 25
 
     member this.GetEmails() = cache.PostAndReply Get
+    member this.GetEmailsAndReset() = cache.PostAndReply GetAndReset
     member this.Port with get() = port

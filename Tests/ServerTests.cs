@@ -94,6 +94,43 @@ namespace Tests
 		}			
 
 		[Test]
+		public async Task Should_be_able_to_reset_email_store()
+		{
+			var sut = GetSut ();
+
+			var msg = new MimeMessage ();
+			msg.From.Add(new MailboxAddress("","from@a.com"));
+			msg.To.Add(new MailboxAddress("","to@b.com"));
+			msg.Subject = "subject";
+			msg.Body = new TextPart("plain") { Text = "body" };
+
+			using (var client = new SmtpClient ()) 
+			{
+				await client.ConnectAsync ("localhost", sut.Port, false);
+
+				await client.SendAsync (msg);
+				await client.SendAsync (msg);
+
+				client.Disconnect (true);
+			}
+
+			var emails = (await BlockReadingAndResettingEmails(sut, emailCount: 2)).ToList();
+			Assert.That(emails.Count, Is.EqualTo(2));
+
+			using (var client = new SmtpClient ()) 
+			{
+				await client.ConnectAsync ("localhost", sut.Port, false);
+
+				await client.SendAsync (msg);
+
+				client.Disconnect (true);
+			}
+				
+			emails = (await BlockReadingAndResettingEmails(sut)).ToList();
+			Assert.That(emails.Count, Is.EqualTo(1));
+		}	
+
+		[Test]
 		public async Task Should_return_multiple_emails_when_sent_from_same_connection()
 		{
 			var sut = GetSut();
@@ -155,7 +192,6 @@ namespace Tests
 			AssertEmailsAreEqual (actual, msg);
 		}
 
-
 		[TestCase("Subject")]
 		[TestCase("From")]
 		[TestCase("To")]
@@ -215,12 +251,22 @@ namespace Tests
 			CollectionAssert.AreEqual (expected.Body, actual.Body);
 		}
 
-		private static async Task<IEnumerable<SMTP.EMail>> BlockReadingEmails(Server sut, int emailCount = 1, int retryCount = 1)
+		private static Task<IEnumerable<SMTP.EMail>> BlockReadingEmails(Server sut, int emailCount = 1, int retryCount = 1)
+		{
+			return BlockReadingEmails (sut.GetEmails);
+		}
+
+		private static Task<IEnumerable<SMTP.EMail>> BlockReadingAndResettingEmails(Server sut, int emailCount = 1, int retryCount = 1)
+		{
+			return BlockReadingEmails (sut.GetEmailsAndReset);
+		}
+
+		private static async Task<IEnumerable<SMTP.EMail>> BlockReadingEmails(Func<IEnumerable<SMTP.EMail>> sut, int emailCount = 1, int retryCount = 1)
 		{
 			if (retryCount < 0)
 				throw new Exception ("Emails weren't found within the given retryCount");
 
-			var emails = sut.GetEmails ();
+			var emails = sut();
 
 			if (emails.Count() >= emailCount)
 				return emails;
@@ -228,7 +274,6 @@ namespace Tests
 			await Task.Delay (50);
 			return await BlockReadingEmails (sut, emailCount, retryCount - 1);
 		}
-
 
 		private static readonly Random Rand = new Random();
 		private static Server GetSut ()
