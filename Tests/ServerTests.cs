@@ -253,12 +253,12 @@ namespace Tests
 
 		private static Task<IEnumerable<SMTP.EMail>> BlockReadingEmails(Server sut, int emailCount = 1, int retryCount = 1)
 		{
-			return BlockReadingEmails (sut.GetEmails);
+			return BlockReadingEmails (sut.GetEmails, emailCount: emailCount, retryCount: retryCount);
 		}
 
 		private static Task<IEnumerable<SMTP.EMail>> BlockReadingAndResettingEmails(Server sut, int emailCount = 1, int retryCount = 1)
 		{
-			return BlockReadingEmails (sut.GetEmailsAndReset);
+			return BlockReadingEmails (sut.GetEmailsAndReset, emailCount: emailCount, retryCount: retryCount);
 		}
 
 		private static async Task<IEnumerable<SMTP.EMail>> BlockReadingEmails(Func<IEnumerable<SMTP.EMail>> sut, int emailCount = 1, int retryCount = 1)
