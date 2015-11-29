@@ -148,7 +148,7 @@ namespace Tests
 		}	
 
 		[Test]
-		public async void Should_return_multiple_to_addresses()
+		public async Task Should_return_multiple_to_addresses()
 		{
 			var sut = GetSut ();
 
