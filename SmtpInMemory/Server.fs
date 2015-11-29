@@ -3,16 +3,17 @@
 open System.Net.Sockets
 open System.Net
 open System.IO
+open System
 
 type private Agent<'T> = MailboxProcessor<'T>
 
-type private Header = { Subject: string option; From: string option; To: string option; Headers: string list }
+type private Header = { Subject: string option; From: string list; To: string list; Headers: string list }
 
 type private EMailBuilder = { Body:string list; Header: Header }
 
-type EMail = { Body: string seq; Subject: string; From: string; To: string; Headers: string seq }
+type EMail = { Body: string seq; Subject: string; From: string seq; To: string seq; Headers: string seq }
 
-let private emptyHeader = { Header.Subject=None; From=None; To=None; Headers=[] }
+let private emptyHeader = { Header.Subject=None; From=[]; To=[]; Headers=[] }
 let private emptyEmail = { EMailBuilder.Body=[]; Header=emptyHeader }
 
 type private CheckInbox =
@@ -23,14 +24,15 @@ type private CheckInbox =
 let private (|From|To|Subject|Header|) (input:string) =
     let fields = ["From";"To";"Subject"]
     let addColon x = x |> List.map(fun x -> x + ": ")
-    let trimStart (x:string) = input.Split([| x |], System.StringSplitOptions.None).[1..] |> Array.fold (+) ""
+    let trimStart (x:string) = input.Split([| x |], StringSplitOptions.None).[1..] |> Array.fold (+) ""
+    let splitCsv (input:string) = input.Split([| ',' |], StringSplitOptions.None) |> Array.map(fun i -> i.Trim()) |> Array.toList
     let matches = 
         fields
         |> addColon
         |> List.map(fun r -> (input.StartsWith(r),trimStart r))
     match matches with
-    | (true,input)::_ -> From input
-    | _::(true,input)::_ -> To input
+    | (true,input)::_ -> From(input |> splitCsv)
+    | _::(true,input)::_ -> To(input |> splitCsv)
     | _::_::(true,input)::_ -> Subject input
     | _ -> Header input
 
@@ -99,8 +101,8 @@ let private receiveEmails (listener:TcpListener) = async {
                     else
                         let header =
                             match line with
-                            | From l -> { header with From = Some l }
-                            | To l ->{ header with To = Some l }
+                            | From l -> { header with From = l }
+                            | To l ->{ header with To = l }
                             | Subject l -> { header with Subject = Some l }
                             | Header l -> {header with Headers=l::header.Headers }
                         Some(header, header)
@@ -140,8 +142,8 @@ let private smtpAgent (cachingAgent: Agent<CheckInbox>) port =
             let valueOrEmptyString = function | Some s -> s | None -> ""
             newMessages
             |> List.map(fun newMessage -> 
-                {   From=valueOrEmptyString newMessage.Header.From
-                    To=valueOrEmptyString newMessage.Header.To
+                {   From=newMessage.Header.From
+                    To=newMessage.Header.To
                     Subject=valueOrEmptyString newMessage.Header.Subject
                     Body=newMessage.Body
                     Headers=newMessage.Header.Headers   }

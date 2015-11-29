@@ -190,7 +190,63 @@ namespace Tests
 			var actual = emails.Single ();
 
 			Assert.That (actual.Body.Count (), Is.EqualTo (0));
-		}			
+		}
+
+		[Test]
+		public async Task Should_return_multiple_from_addresses()
+		{
+			var sut = GetSut ();
+
+			var msg = new MimeMessage ();
+			msg.From.Add(new MailboxAddress("","from@a.com"));
+			msg.From.Add(new MailboxAddress("","from2@a.com"));
+			msg.To.Add(new MailboxAddress("","to@b.com"));
+			msg.Subject = "subject";
+			msg.Body = new TextPart("plain") { Text = "body" };
+
+			using (var client = new SmtpClient ()) 
+			{
+				await client.ConnectAsync ("localhost", sut.Port, false);
+
+				await client.SendAsync (msg);
+
+				client.Disconnect (true);
+			}
+
+			var emails = await BlockReadingEmails (sut);
+
+			var actual = emails.Single ();
+
+			AssertEmailsAreEqual(actual, msg);
+		}	
+
+		[Test]
+		public async void Should_return_multiple_to_addresses()
+		{
+			var sut = GetSut ();
+
+			var msg = new MimeMessage ();
+			msg.From.Add(new MailboxAddress("","from@a.com"));
+			msg.To.Add(new MailboxAddress("","to@b.com"));
+			msg.To.Add(new MailboxAddress("","to2@b.com"));
+			msg.Subject = "subject";
+			msg.Body = new TextPart("plain") { Text = "body" };
+
+			using (var client = new SmtpClient ()) 
+			{
+				await client.ConnectAsync ("localhost", sut.Port, false);
+
+				await client.SendAsync (msg);
+
+				client.Disconnect (true);
+			}
+
+			var emails = await BlockReadingEmails (sut);
+
+			var actual = emails.Single ();
+
+			AssertEmailsAreEqual(actual, msg);
+		}
 
 		[TestCase("Subject")]
 		[TestCase("From")]
@@ -232,8 +288,8 @@ namespace Tests
 			var expected = new SMTP.EMail (
 				string.IsNullOrEmpty(body) ? new string[0] : new[] { body }, 
 				msg.Subject, 
-				msg.From.Single().ToString(), 
-				msg.To.Single().ToString(),
+				msg.From.Select(s => s.ToString()), 
+				msg.To.Select(s => s.ToString()),
 				new string[] { }); 
 
 			AssertEmailsAreEqual (actual, expected);
@@ -241,7 +297,8 @@ namespace Tests
 
 		private static void AssertEmailsAreEqual(SMTP.EMail actual, SMTP.EMail expected)
 		{
-			Assert.That(actual.From,Is.EqualTo(expected.From));
+			CollectionAssert.AreEqual (actual.From, expected.From);
+
 			Assert.That(actual.To,Is.EqualTo(expected.To));
 			Assert.That(actual.Subject,Is.EqualTo(expected.Subject));
 			Console.WriteLine (actual.Headers);
