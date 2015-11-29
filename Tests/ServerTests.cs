@@ -189,8 +189,8 @@ namespace Tests
 
 			var actual = emails.Single ();
 
-			AssertEmailsAreEqual (actual, msg);
-		}
+			Assert.That (actual.Body.Count (), Is.EqualTo (0));
+		}			
 
 		[TestCase("Subject")]
 		[TestCase("From")]
