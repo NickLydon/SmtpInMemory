@@ -23,26 +23,15 @@ namespace Tests
 
 			Assert.That (actual, Is.Empty);
 		}
-			
+
 		[Test]
 		public async Task Should_return_email_when_email_sent()
 		{
 			var sut = GetSut ();
 
-			var msg = new MimeMessage ();
-			msg.From.Add(new MailboxAddress("","from@a.com"));
-			msg.To.Add(new MailboxAddress("","to@b.com"));
-			msg.Subject = "subject";
-			msg.Body = new TextPart("plain") { Text = "body" };
+			var msg = CreateMessage ();
 	
-			using (var client = new SmtpClient ()) 
-			{
-				await client.ConnectAsync ("localhost", sut.Port, false);
-
-				await client.SendAsync (msg);
-
-				client.Disconnect (true);
-			}
+			await SendEmailsAsync (sut, msg);
 
 			var emails = await BlockReadingEmails (sut);
 
@@ -68,23 +57,9 @@ namespace Tests
 			msg2.Subject = "subject2";
 			msg2.Body = new TextPart("plain") { Text = "body2" };
 
-			using (var client = new SmtpClient ()) 
-			{
-				await client.ConnectAsync ("localhost", sut.Port, false);
+			await SendEmailsAsync (sut, msg);
 
-				await client.SendAsync (msg);
-
-				client.Disconnect (true);
-			}
-
-			using (var client = new SmtpClient ()) 
-			{
-				await client.ConnectAsync ("localhost", sut.Port, false);
-
-				await client.SendAsync (msg2);
-
-				client.Disconnect (true);
-			}
+			await SendEmailsAsync (sut, msg2);
 
 			var emails = (await BlockReadingEmails(sut, emailCount: 2)).ToList();
 
@@ -98,33 +73,14 @@ namespace Tests
 		{
 			var sut = GetSut ();
 
-			var msg = new MimeMessage ();
-			msg.From.Add(new MailboxAddress("","from@a.com"));
-			msg.To.Add(new MailboxAddress("","to@b.com"));
-			msg.Subject = "subject";
-			msg.Body = new TextPart("plain") { Text = "body" };
+			var msg = CreateMessage ();
 
-			using (var client = new SmtpClient ()) 
-			{
-				await client.ConnectAsync ("localhost", sut.Port, false);
-
-				await client.SendAsync (msg);
-				await client.SendAsync (msg);
-
-				client.Disconnect (true);
-			}
+			await SendEmailsAsync (sut, msg, msg);
 
 			var emails = (await BlockReadingAndResettingEmails(sut, emailCount: 2)).ToList();
 			Assert.That(emails.Count, Is.EqualTo(2));
 
-			using (var client = new SmtpClient ()) 
-			{
-				await client.ConnectAsync ("localhost", sut.Port, false);
-
-				await client.SendAsync (msg);
-
-				client.Disconnect (true);
-			}
+			await SendEmailsAsync (sut, msg);
 				
 			emails = (await BlockReadingAndResettingEmails(sut)).ToList();
 			Assert.That(emails.Count, Is.EqualTo(1));
@@ -147,15 +103,7 @@ namespace Tests
 			msg2.Subject = "subject2";
 			msg2.Body = new TextPart("plain") { Text = "body2" };
 
-			using (var client = new SmtpClient ()) 
-			{
-				await client.ConnectAsync ("localhost", sut.Port, false);
-
-				await client.SendAsync (msg);
-				await client.SendAsync (msg2);
-
-				client.Disconnect (true);
-			}
+			await SendEmailsAsync (sut, msg, msg2);
 
 			var emails = (await BlockReadingEmails(sut, emailCount: 2)).ToList();
 
@@ -170,20 +118,9 @@ namespace Tests
 		{
 			var sut = GetSut ();
 
-			var msg = new MimeMessage ();
-			msg.From.Add(new MailboxAddress("","from@a.com"));
-			msg.To.Add(new MailboxAddress("","to@b.com"));
-			msg.Subject = "subject";
-			msg.Body = new TextPart("plain") { Text = string.Empty };
+			var msg = CreateMessage (body: string.Empty);
 
-			using (var client = new SmtpClient ()) 
-			{
-				await client.ConnectAsync ("localhost", sut.Port, false);
-
-				await client.SendAsync (msg);
-
-				client.Disconnect (true);
-			}
+			await SendEmailsAsync (sut, msg);
 
 			var emails = await BlockReadingEmails (sut);
 
@@ -197,21 +134,11 @@ namespace Tests
 		{
 			var sut = GetSut ();
 
-			var msg = new MimeMessage ();
-			msg.From.Add(new MailboxAddress("","from@a.com"));
+			var msg = CreateMessage ();
 			msg.From.Add(new MailboxAddress("","from2@a.com"));
-			msg.To.Add(new MailboxAddress("","to@b.com"));
-			msg.Subject = "subject";
-			msg.Body = new TextPart("plain") { Text = "body" };
+			Assert.That (msg.From.Count, Is.EqualTo (2));
 
-			using (var client = new SmtpClient ()) 
-			{
-				await client.ConnectAsync ("localhost", sut.Port, false);
-
-				await client.SendAsync (msg);
-
-				client.Disconnect (true);
-			}
+			await SendEmailsAsync (sut, msg);
 
 			var emails = await BlockReadingEmails (sut);
 
@@ -225,21 +152,11 @@ namespace Tests
 		{
 			var sut = GetSut ();
 
-			var msg = new MimeMessage ();
-			msg.From.Add(new MailboxAddress("","from@a.com"));
-			msg.To.Add(new MailboxAddress("","to@b.com"));
+			var msg = CreateMessage ();
 			msg.To.Add(new MailboxAddress("","to2@b.com"));
-			msg.Subject = "subject";
-			msg.Body = new TextPart("plain") { Text = "body" };
+			Assert.That (msg.To.Count, Is.EqualTo (2));
 
-			using (var client = new SmtpClient ()) 
-			{
-				await client.ConnectAsync ("localhost", sut.Port, false);
-
-				await client.SendAsync (msg);
-
-				client.Disconnect (true);
-			}
+			await SendEmailsAsync (sut, msg);
 
 			var emails = await BlockReadingEmails (sut);
 
@@ -260,26 +177,25 @@ namespace Tests
 		{
 			var sut = GetSut ();
 
-			var msg = new MimeMessage ();
-			msg.From.Add(new MailboxAddress("","from@a.com"));
-			msg.To.Add(new MailboxAddress("","to@b.com"));
-			msg.Subject = "subject";
-			msg.Body = new TextPart("plain") { Text = field + ": overwritten" };
+			var msg = CreateMessage(body: field + ": overwritten");
 
-			using (var client = new SmtpClient ()) 
-			{
-				await client.ConnectAsync ("localhost", sut.Port, false);
-
-				await client.SendAsync (msg);
-
-				client.Disconnect (true);
-			}
+			await SendEmailsAsync (sut, msg);
 
 			var emails = await BlockReadingEmails (sut);
 
 			var actual = emails.Single ();
 
 			AssertEmailsAreEqual(actual, msg);
+		}
+
+		private static MimeMessage CreateMessage(string from = "from@a.com", string to = "to@b.com", string subject = "subject", string body = "body")
+		{
+			var msg = new MimeMessage ();
+			msg.From.Add(new MailboxAddress("",from));
+			msg.To.Add(new MailboxAddress("",to));
+			msg.Subject = subject;
+			msg.Body = new TextPart("plain") { Text = body };
+			return msg;
 		}
 			
 		private static void AssertEmailsAreEqual(SMTP.EMail actual, MimeMessage msg)
@@ -293,6 +209,19 @@ namespace Tests
 				new string[] { }); 
 
 			AssertEmailsAreEqual (actual, expected);
+		}
+
+		private static async Task SendEmailsAsync (Server sut, params MimeMessage[] msgs)
+		{
+			using (var client = new SmtpClient ()) 
+			{
+				await client.ConnectAsync ("localhost", sut.Port, false);
+				foreach (var msg in msgs) 
+				{
+					await client.SendAsync (msg);
+				}
+				client.Disconnect (true);
+			}
 		}
 
 		private static void AssertEmailsAreEqual(SMTP.EMail actual, SMTP.EMail expected)
