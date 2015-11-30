@@ -1,0 +1,11 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2010/07/nuspec.xsd">
+  <metadata>
+    <id>SmtpInMemory</id>
+    <version>1.0.0</version>
+    <authors>Nicholas Lydon</authors>
+    <projectUrl>http://github.com/NickLydon/SmtpInMemory</projectUrl>
+    <dependencies>
+    </dependencies> 
+  </metadata>
+</package>
