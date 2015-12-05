@@ -53,51 +53,44 @@ let private receiveEmails (listener:TcpListener) = async {
     use wr = new StreamWriter(stream)
     wr.NewLine <- "\r\n"
     wr.AutoFlush <- true
-    let write (s:string) = wr.WriteLine(s)
-    let read() = sr.ReadLine()
+    let writeline (s:string) = wr.WriteLine(s)
+    let readline() = sr.ReadLine()
 
-    wr.WriteLine "220 localhost -- Fake proxy server"
+    writeline "220 localhost -- Fake proxy server"
    
     let rec readlines emailBuilder emails =
-        let line = read()
+        let line = readline()
 
         match line with
         | "DATA" -> 
-            write "354 Start input, end data with <CRLF>.<CRLF>"
-            
+            writeline "354 Start input, end data with <CRLF>.<CRLF>"
+
+            let readUntilTerminator() =
+                ()
+                |> Seq.unfold(fun() -> Some(readline(),())) 
+                |> Seq.takeWhile (fun line -> [null;".";""] |> List.contains line |> not)
+
             let header = 
-                emailBuilder.Header
-                |> Seq.unfold(fun header ->
-                    let line = read()
-                    if line = null || line = "." || line = ""
-                    then None
-                    else
-                        let header = { header with Headers=line::header.Headers }
-                        let header =
-                            match line with
-                            | From l -> { header with From = l }
-                            | To l -> { header with To = l }
-                            | Subject l -> { header with Subject = Some l }
-                            | _ -> header
-                        Some(header, header)
-                )
-                |> Seq.last
+                readUntilTerminator()
+                |> Seq.fold(fun header line ->                    
+                    let header = { header with Header.Headers=line::header.Headers }
+                    let header =
+                        match line with
+                        | From l -> { header with From = l }
+                        | To l -> { header with To = l }
+                        | Subject l -> { header with Subject = Some l }
+                        | _ -> header
+                    header
+                ) emailBuilder.Header
             
-            let body = 
-                read()
-                |> Seq.unfold(fun line ->
-                    if line = null || line = "." || line = ""
-                    then None
-                    else Some(line, read())
-                )
-                |> List.ofSeq
+            let body = readUntilTerminator() |> List.ofSeq
                       
             readlines emptyEmail ({emailBuilder with Header = header; Body = body}::emails)
         | "QUIT" -> 
-            write "250 OK"
+            writeline "250 OK"
             emails
         | rest ->
-            write "250 OK"
+            writeline "250 OK"
             readlines emailBuilder emails
                 
     let newMessages = readlines emptyEmail []
