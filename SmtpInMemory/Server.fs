@@ -43,59 +43,32 @@ type private ReaderLines =
     | Write of string
     | GetAll of AsyncReplyChannel<Message list>
 
-type private ReaderWriter (sr:StreamReader, wr:StreamWriter) =
-    let agent = 
-        Agent.Start(fun inbox ->
-            let rec loop lines = async {
-                let! msg = inbox.Receive()
-                match msg with
-                | Read chan -> 
-                    let line = sr.ReadLine()
-                    chan.Reply line
-                    return! loop (Received(line)::lines)
-                | Write msg ->
-                    wr.WriteLine(msg)
-                    return! loop (Sent(msg)::lines)
-                | GetAll chan -> 
-                    chan.Reply lines
-                    return! loop lines }
-            loop [])
-
-    member this.Read() = agent.PostAndReply Read
-    member this.Write line = agent.Post(Write line)
-    member this.GetAll() = agent.PostAndReply GetAll
-
-    interface System.IDisposable with
-        member this.Dispose() = 
-                    sr.Dispose()
-                    wr.Dispose() 
-
 let private receiveEmails (listener:TcpListener) = async {
 
     use! client = listener.AcceptTcpClientAsync() |> Async.AwaitTask
 
     use stream = client.GetStream()
     
-    use readWriter = 
-        let sr = new StreamReader(stream)
-        let wr = new StreamWriter(stream)
-        wr.NewLine <- "\r\n"
-        wr.AutoFlush <- true
-        new ReaderWriter(sr, wr)
+    use sr = new StreamReader(stream)
+    use wr = new StreamWriter(stream)
+    wr.NewLine <- "\r\n"
+    wr.AutoFlush <- true
+    let write (s:string) = wr.WriteLine(s)
+    let read() = sr.ReadLine()
 
-    readWriter.Write "220 localhost -- Fake proxy server"
+    wr.WriteLine "220 localhost -- Fake proxy server"
    
     let rec readlines emailBuilder emails =
-        let line = readWriter.Read()
+        let line = read()
 
         match line with
         | "DATA" -> 
-            readWriter.Write "354 Start input, end data with <CRLF>.<CRLF>"
+            write "354 Start input, end data with <CRLF>.<CRLF>"
             
             let header = 
                 emailBuilder.Header
                 |> Seq.unfold(fun header ->
-                    let line = readWriter.Read()
+                    let line = read()
                     if line = null || line = "." || line = ""
                     then None
                     else
@@ -111,20 +84,20 @@ let private receiveEmails (listener:TcpListener) = async {
                 |> Seq.last
             
             let body = 
-                readWriter.Read()
+                read()
                 |> Seq.unfold(fun line ->
                     if line = null || line = "." || line = ""
                     then None
-                    else Some(line, readWriter.Read())
+                    else Some(line, read())
                 )
                 |> List.ofSeq
                       
             readlines emptyEmail ({emailBuilder with Header = header; Body = body}::emails)
         | "QUIT" -> 
-            readWriter.Write "250 OK"
+            write "250 OK"
             emails
         | rest ->
-            readWriter.Write "250 OK"
+            write "250 OK"
             readlines emailBuilder emails
                 
     let newMessages = readlines emptyEmail []
