@@ -68,7 +68,7 @@ let private receiveEmails (listener:TcpListener) = async {
             let readUntilTerminator() =
                 ()
                 |> Seq.unfold(fun() -> Some(readline(),())) 
-                |> Seq.takeWhile (fun line -> [null;".";""] |> List.contains line |> not)
+                |> Seq.takeWhile (fun line -> [null;".";""] |> List.exists ((=) line) |> not)
 
             let header = 
                 readUntilTerminator()
