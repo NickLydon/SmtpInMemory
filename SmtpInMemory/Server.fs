@@ -68,7 +68,7 @@ let private receiveEmails (listener:TcpListener) = async {
             let readUntilTerminator() =
                 ()
                 |> Seq.unfold(fun() -> Some(readline(),())) 
-                |> Seq.takeWhile (fun line -> [null;".";""] |> List.exists ((=) line) |> not)
+                |> Seq.takeWhile (fun line -> set [null;".";""] |> Set.contains line |> not)
 
             let header = 
                 readUntilTerminator()
@@ -106,12 +106,11 @@ let private smtpAgent (cachingAgent: Agent<CheckInbox>) port =
 
         let rec loop() = async {
             let! newMessages = receiveEmails listener
-            let valueOrEmptyString = function | Some s -> s | None -> ""
             newMessages
             |> List.map(fun newMessage -> 
                 {   From=newMessage.Header.From
                     To=newMessage.Header.To
-                    Subject=valueOrEmptyString newMessage.Header.Subject
+                    Subject=newMessage.Header.Subject |> Option.fold(fun s t -> t) ""
                     Body=newMessage.Body
                     Headers=newMessage.Header.Headers   }
                 |> Add

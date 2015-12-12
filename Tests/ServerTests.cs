@@ -130,6 +130,22 @@ namespace Tests
 		}
 
 		[Test]
+		public async Task Should_return_empty_string_when_subject_is_not_provided()
+		{
+			var sut = GetSut ();
+
+			var msg = CreateMessage (subject:null);
+
+			await SendEmailsAsync (sut, msg);
+
+			var emails = await BlockReadingEmails (sut);
+
+			var actual = emails.Single ();
+
+			Assert.That (actual.Subject, Is.EqualTo (string.Empty));
+		}
+
+		[Test]
 		public async Task Should_return_multiple_from_addresses()
 		{
 			var sut = GetSut ();
@@ -193,7 +209,7 @@ namespace Tests
 			var msg = new MimeMessage ();
 			msg.From.Add(new MailboxAddress("",from));
 			msg.To.Add(new MailboxAddress("",to));
-			msg.Subject = subject;
+			if(subject != null) msg.Subject = subject;
 			msg.Body = new TextPart("plain") { Text = body };
 			return msg;
 		}
