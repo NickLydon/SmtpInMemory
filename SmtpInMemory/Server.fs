@@ -43,18 +43,48 @@ type private ReaderLines =
     | Write of string
     | GetAll of AsyncReplyChannel<Message list>
 
+type private ReaderWriter (sr:StreamReader, wr:StreamWriter) =
+    let agent = 
+        Agent.Start(fun inbox ->
+            let rec loop lines = async {
+                let! msg = inbox.Receive()
+                match msg with
+                | Read chan -> 
+                    let line = sr.ReadLine()
+                    chan.Reply line
+                    return! loop (Received(line)::lines)
+                | Write msg ->
+                    wr.WriteLine(msg)
+                    return! loop (Sent(msg)::lines)
+                | GetAll chan -> 
+                    lines |> List.rev |> chan.Reply 
+                    return! loop lines }
+            loop [])
+
+    member this.Read() = agent.PostAndReply Read
+    member this.Write line = agent.Post(Write line)
+    member this.GetAll() = agent.PostAndReply GetAll
+
+    interface System.IDisposable with
+        member this.Dispose() =                    
+                    sr.Dispose()
+                    wr.Dispose()
+
 let private receiveEmails (listener:TcpListener) = async {
 
     use! client = listener.AcceptTcpClientAsync() |> Async.AwaitTask
 
     use stream = client.GetStream()
-    
-    use sr = new StreamReader(stream)
-    use wr = new StreamWriter(stream)
-    wr.NewLine <- "\r\n"
-    wr.AutoFlush <- true
-    let writeline (s:string) = wr.WriteLine(s)
-    let readline() = sr.ReadLine()
+
+    use recorder =     
+        let sr = new StreamReader(stream)
+        let wr = new StreamWriter(stream)
+        wr.NewLine <- "\r\n"
+        wr.AutoFlush <- true
+        new ReaderWriter(sr, wr)
+
+    let writeline = recorder.Write
+    let readline = recorder.Read
 
     writeline "220 localhost -- Fake proxy server"
    
@@ -94,18 +124,44 @@ let private receiveEmails (listener:TcpListener) = async {
             readlines emailBuilder emails
                 
     let newMessages = readlines emptyEmail []
+    let recorded = recorder.GetAll()
 
     client.Close()
-    return newMessages }
 
-let private smtpAgent (cachingAgent: Agent<CheckInbox>) port = 
+    return newMessages,recorded }
+
+type public ForwardServerConfig = { Port: int; Host: string }
+
+let private forwardMessages forwardServer messages = 
+    async {
+        use client = new TcpClient()
+
+        do! client.ConnectAsync(forwardServer.Host, forwardServer.Port) |> Async.AwaitIAsyncResult |> Async.Ignore
+
+        use stream = client.GetStream()
+        use streamWriter = new StreamWriter(stream)
+        streamWriter.NewLine <- "\r\n"
+        streamWriter.AutoFlush <- true
+        use streamReader = new StreamReader(stream)
+
+        for message in messages do
+            match message with
+            | Received m -> do! streamWriter.WriteLineAsync(m) |> Async.AwaitTask
+            | Sent m -> do! streamReader.ReadLineAsync() |> Async.AwaitTask |> Async.Ignore
+
+        do! streamWriter.FlushAsync() |> Async.AwaitIAsyncResult |> Async.Ignore
+
+        client.Close()
+    }
+
+let private smtpAgent (cachingAgent: Agent<CheckInbox>) port forwardServer = 
     Agent.Start(fun _ -> 
         let endPoint = new IPEndPoint(IPAddress.Any, port)
         let listener = new TcpListener(endPoint)
         listener.Start()
 
         let rec loop() = async {
-            let! newMessages = receiveEmails listener
+            let! newMessages,recorded = receiveEmails listener
             newMessages
             |> List.map(fun newMessage -> 
                 {   From=newMessage.Header.From
@@ -116,7 +172,13 @@ let private smtpAgent (cachingAgent: Agent<CheckInbox>) port =
                 |> Add
             )
             |> List.iter cachingAgent.Post
-            return! loop() }
+
+            match forwardServer with
+            | Some config -> do! forwardMessages config recorded
+            | _ -> ()
+
+            return! loop() 
+        }
 
         loop())
 
@@ -135,11 +197,15 @@ let private cachingAgent() =
                 return! loop (message::messages) }
         loop [])
 
-type Server(port) =
-    let cache = cachingAgent()
-    let server = smtpAgent cache port
 
-    new() = Server 25
+let public NoForwardServer = { Port = -1; Host = "" }
+
+type public Server(port, thruServer) =
+    let cache = cachingAgent()
+    let server = smtpAgent cache port (if thruServer = NoForwardServer then None else Some thruServer)
+
+    new(port) = Server (port, NoForwardServer)
+    new() = Server (25, NoForwardServer)
 
     member this.GetEmails() = cache.PostAndReply Get
     member this.GetEmailsAndReset() = cache.PostAndReply GetAndReset

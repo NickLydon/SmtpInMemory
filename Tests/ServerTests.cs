@@ -204,6 +204,23 @@ namespace Tests
 			AssertEmailsAreEqual(actual, msg);
 		}
 
+		[Test]
+		public async Task Should_forward_emails()
+		{
+			var forwardServer = new Server (RandomPortNumber());
+			var sut = new Server (RandomPortNumber(), new SMTP.ForwardServerConfig (forwardServer.Port, "localhost"));
+
+			var msg = CreateMessage ();
+
+			await SendEmailsAsync (sut, msg);
+
+			var emails = await BlockReadingEmails (forwardServer);
+
+			var actual = emails.Single ();
+
+			AssertEmailsAreEqual(actual, msg);
+		}
+			
 		private static MimeMessage CreateMessage(string from = "from@a.com", string to = "to@b.com", string subject = "subject", string body = "body")
 		{
 			var msg = new MimeMessage ();
@@ -276,9 +293,15 @@ namespace Tests
 		}
 
 		private static readonly Random Rand = new Random();
+
+		static int RandomPortNumber ()
+		{
+			return Rand.Next (1000, 9001);
+		}
+
 		private static Server GetSut ()
 		{
-			return new Server (Rand.Next(1000,9001));
+			return new Server (RandomPortNumber ());
 		}
 
 	}
