@@ -146,10 +146,8 @@ let private forwardMessages forwardServer messages =
 
         for message in messages do
             match message with
-            | Received m -> do! streamWriter.WriteLineAsync(m) |> Async.AwaitTask
+            | Received m -> do! streamWriter.WriteLineAsync(m) |> Async.AwaitIAsyncResult |> Async.Ignore
             | Sent m -> do! streamReader.ReadLineAsync() |> Async.AwaitTask |> Async.Ignore
-
-        do! streamWriter.FlushAsync() |> Async.AwaitIAsyncResult |> Async.Ignore
 
         client.Close()
     }
