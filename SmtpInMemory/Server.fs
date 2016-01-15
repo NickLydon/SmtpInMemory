@@ -4,6 +4,9 @@ open System.Net.Sockets
 open System.Net
 open System.IO
 open System
+open System.Reactive
+open System.Reactive.Subjects
+open System.Reactive.Linq
 
 type private Agent<'T> = MailboxProcessor<'T>
 
@@ -180,7 +183,7 @@ let private smtpAgent (cachingAgent: Agent<CheckInbox>) port forwardServer =
 
         loop())
 
-let private cachingAgent (evt: Event<EMail>) =
+let private cachingAgent emailReceived =
     Agent.Start(fun inbox -> 
         let rec loop messages = async {
             let! newMessage = inbox.Receive()
@@ -192,16 +195,15 @@ let private cachingAgent (evt: Event<EMail>) =
                 channel.Reply messages
                 return! loop []
             | Add message -> 
-                evt.Trigger message
+                message |> emailReceived
                 return! loop (message::messages) }
         loop [])
-
 
 let public NoForwardServer = { Port = -1; Host = "" }
 
 type public Server(port, thruServer) =
-    let emailReceivedEvent = Event<EMail>()
-    let cache = cachingAgent emailReceivedEvent
+    let emailReceivedEvent = new Subject<EMail>()
+    let cache = cachingAgent emailReceivedEvent.OnNext
     let server = smtpAgent cache port (if thruServer = NoForwardServer then None else Some thruServer)
 
     new(port) = Server (port, NoForwardServer)
@@ -209,6 +211,5 @@ type public Server(port, thruServer) =
 
     member this.GetEmails() = cache.PostAndReply Get
     member this.GetEmailsAndReset() = cache.PostAndReply GetAndReset
-    member this.Port with get() = port
-    member this.EmailReceived = emailReceivedEvent.Publish    
-    member this.AddEmailReceivedHandler (f:System.Action<EMail>) = emailReceivedEvent.Publish.Add(fun e -> f.Invoke(e))
+    member this.Port = port
+    member this.EmailReceived = emailReceivedEvent.AsObservable()

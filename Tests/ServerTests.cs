@@ -44,21 +44,19 @@ namespace Tests
         [Test]
         public async Task Should_raise_email_received_event()
         {
-            using (var countdownEvent = new CountdownEvent(1))
+            var sut = GetSut();
+            var msg = CreateMessage();
+
+            using (var semaphore = new Semaphore(0,1))
+            using (sut.EmailReceived.Subscribe(actual =>
             {
-                var sut = GetSut();
-
-                var msg = CreateMessage();
-
-                sut.AddEmailReceivedHandler(actual =>
-                {
-                    AssertEmailsAreEqual(actual, msg);
-                    countdownEvent.Signal();
-                });
-
+                AssertEmailsAreEqual(actual, msg);
+                semaphore.Release();
+            }))
+            {
                 await SendEmailsAsync(sut, msg);
 
-                countdownEvent.Wait();
+                semaphore.WaitOne();
             }
         }
 
@@ -236,7 +234,7 @@ namespace Tests
 
 			await SendEmailsAsync (sut, msg);
 
-			var emails = await BlockReadingEmails (forwardServer, retryCount: 2);
+			var emails = await BlockReadingEmails (forwardServer, retryCount: 3);
 
 			var actual = emails.Single ();
 

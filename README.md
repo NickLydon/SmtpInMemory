@@ -6,21 +6,21 @@
 # SmtpInMemory
 Simple SMTP server - can query received emails in memory
 
-##In F#
+## In F#
 
     let port = 9000
     let server = SMTP.Server(port) //port is optional - will default to 25
     //send emails
     let emails = server.GetEmails()
 
-##In C#
+## In C#
 
     var port = 9000;
     var server = new SMTP.Server(port); //port is optional - will default to 25
     //send emails
     var emails = server.GetEmails()
 
-##As a proxy email server
+## As a proxy email server
 The server can forward emails onwards if the hostname and port number of the destination server are provided:
 
     let proxyPort = 9000
@@ -28,6 +28,14 @@ The server can forward emails onwards if the hostname and port number of the des
     let server = SMTP.Server(proxyPort,destinationServer)
     //send emails
     let emails = server.GetEmails()
+    
+## Registering for events
+The server exposes an [Rx stream](https://github.com/Reactive-Extensions/Rx.NET) for the emails received:
+
+    using (sut.EmailReceived.Subscribe(actual =>
+    {
+        AssertEmailsAreEqual(actual, msg);
+    }));
 
 
 [Look at the tests](https://github.com/NickLydon/SmtpInMemory/blob/master/Tests/ServerTests.cs) to see emails being sent. [MailKit](https://github.com/jstedfast/MailKit) is the library used to send emails.
