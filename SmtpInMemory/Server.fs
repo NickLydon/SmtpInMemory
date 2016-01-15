@@ -180,7 +180,7 @@ let private smtpAgent (cachingAgent: Agent<CheckInbox>) port forwardServer =
 
         loop())
 
-let private cachingAgent() =
+let private cachingAgent (evt: Event<EMail>) =
     Agent.Start(fun inbox -> 
         let rec loop messages = async {
             let! newMessage = inbox.Receive()
@@ -192,6 +192,7 @@ let private cachingAgent() =
                 channel.Reply messages
                 return! loop []
             | Add message -> 
+                evt.Trigger message
                 return! loop (message::messages) }
         loop [])
 
@@ -199,7 +200,8 @@ let private cachingAgent() =
 let public NoForwardServer = { Port = -1; Host = "" }
 
 type public Server(port, thruServer) =
-    let cache = cachingAgent()
+    let emailReceivedEvent = Event<EMail>()
+    let cache = cachingAgent emailReceivedEvent
     let server = smtpAgent cache port (if thruServer = NoForwardServer then None else Some thruServer)
 
     new(port) = Server (port, NoForwardServer)
@@ -208,3 +210,5 @@ type public Server(port, thruServer) =
     member this.GetEmails() = cache.PostAndReply Get
     member this.GetEmailsAndReset() = cache.PostAndReply GetAndReset
     member this.Port with get() = port
+    member this.EmailReceived = emailReceivedEvent.Publish    
+    member this.AddEmailReceivedHandler (f:System.Action<EMail>) = emailReceivedEvent.Publish.Add(fun e -> f.Invoke(e))

@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 
 using MailKit.Net.Smtp;
@@ -40,7 +41,28 @@ namespace Tests
 			AssertEmailsAreEqual (actual, msg);
 		}
 
-		[Test]
+        [Test]
+        public async Task Should_raise_email_received_event()
+        {
+            using (var countdownEvent = new CountdownEvent(1))
+            {
+                var sut = GetSut();
+
+                var msg = CreateMessage();
+
+                sut.AddEmailReceivedHandler(actual =>
+                {
+                    AssertEmailsAreEqual(actual, msg);
+                    countdownEvent.Signal();
+                });
+
+                await SendEmailsAsync(sut, msg);
+
+                countdownEvent.Wait();
+            }
+        }
+
+        [Test]
 		public async Task Should_return_multiple_emails_when_sent()
 		{
 			var sut = GetSut ();
@@ -214,7 +236,7 @@ namespace Tests
 
 			await SendEmailsAsync (sut, msg);
 
-			var emails = await BlockReadingEmails (forwardServer);
+			var emails = await BlockReadingEmails (forwardServer, retryCount: 2);
 
 			var actual = emails.Single ();
 
@@ -288,7 +310,7 @@ namespace Tests
 			if (emails.Count() >= emailCount)
 				return emails;
 
-			await Task.Delay (50);
+			await Task.Delay (25);
 			return await BlockReadingEmails (sut, emailCount, retryCount - 1);
 		}
 
