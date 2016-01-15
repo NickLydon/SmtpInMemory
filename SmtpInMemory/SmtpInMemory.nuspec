@@ -5,7 +5,11 @@
     <version>1.2.0</version>
     <authors>Nicholas Lydon</authors>
     <projectUrl>http://github.com/NickLydon/SmtpInMemory</projectUrl>
+    <title>SmtpInMemory - embeddable SMTP server in .NET</title>
     <description>Library written in F# to receive emails. Can be used from C# or F# in end-to-end tests to ensure emails are being sent correctly.</description>
+    <tags>smtp email f# fsharp smtpserver</tags>
+    <licenseUrl>https://opensource.org/licenses/MIT</licenseUrl>
+    <releaseNotes></releaseNotes>
     <dependencies>
     </dependencies> 
   </metadata>
