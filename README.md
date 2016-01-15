@@ -6,14 +6,14 @@
 # SmtpInMemory
 Simple SMTP server - can query received emails in memory
 
-## In F#
+##In F# #
 
     let port = 9000
     let server = SMTP.Server(port) //port is optional - will default to 25
     //send emails
     let emails = server.GetEmails()
 
-## In C#
+##In C# #
 
     var port = 9000;
     var server = new SMTP.Server(port); //port is optional - will default to 25
