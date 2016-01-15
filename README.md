@@ -31,3 +31,5 @@ The server can forward emails onwards if the hostname and port number of the des
 
 
 [Look at the tests](https://github.com/NickLydon/SmtpInMemory/blob/master/Tests/ServerTests.cs) to see emails being sent. [MailKit](https://github.com/jstedfast/MailKit) is the library used to send emails.
+
+[MIT Licensed](https://opensource.org/licenses/MIT)
