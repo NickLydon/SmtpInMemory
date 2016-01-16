@@ -16,6 +16,7 @@ namespace Tests
 	public class ServerTests
 	{		
 		[Test]
+		[Timeout(1000)]
 		public void Should_return_empty_list_when_no_emails_sent()
 		{
 			var sut = GetSut ();
@@ -26,15 +27,14 @@ namespace Tests
 		}
 
 		[Test]
+		[Timeout(1000)]
 		public async Task Should_return_email_when_email_sent()
 		{
 			var sut = GetSut ();
 
 			var msg = CreateMessage ();
-	
-			await SendEmailsAsync (sut, msg);
 
-			var emails = await BlockReadingEmails (sut);
+			var emails = await GetEmails (sut, s => s.GetEmails(), () => SendEmailsAsync (sut, msg));
 
 			var actual = emails.Single();
 
@@ -42,7 +42,8 @@ namespace Tests
 		}
 
         [Test]
-        public async Task Should_raise_email_received_event()
+		[Timeout(1000)]
+		public async Task Should_raise_email_received_event()
         {
             var sut = GetSut();
             var msg = CreateMessage();
@@ -61,6 +62,7 @@ namespace Tests
         }
 
         [Test]
+		[Timeout(1000)]
 		public async Task Should_return_multiple_emails_when_sent()
 		{
 			var sut = GetSut ();
@@ -77,36 +79,37 @@ namespace Tests
 			msg2.Subject = "subject2";
 			msg2.Body = new TextPart("plain") { Text = "body2" };
 
-			await SendEmailsAsync (sut, msg);
-
-			await SendEmailsAsync (sut, msg2);
-
-			var emails = (await BlockReadingEmails(sut, emailCount: 2)).ToList();
-
+			var emails = 
+				(await GetEmails (sut, s => s.GetEmails(), () => SendEmailsAsync (sut, msg), () => SendEmailsAsync (sut, msg2)))
+					.ToList();
+				
 			Assert.That(emails.Count, Is.EqualTo(2));
 			AssertEmailsAreEqual(emails[0], msg2);
 			AssertEmailsAreEqual(emails[1], msg);
-		}			
+		}
 
 		[Test]
+		[Timeout(1000)]
 		public async Task Should_be_able_to_reset_email_store()
 		{
 			var sut = GetSut ();
 
 			var msg = CreateMessage ();
 
-			await SendEmailsAsync (sut, msg, msg);
+			var emails = 
+				(await GetEmails(sut, s => s.GetEmailsAndReset(), () => SendEmailsAsync (sut, msg), () => SendEmailsAsync(sut, msg)))
+					.ToList();
 
-			var emails = (await BlockReadingAndResettingEmails(sut, emailCount: 2)).ToList();
 			Assert.That(emails.Count, Is.EqualTo(2));
-
-			await SendEmailsAsync (sut, msg);
-				
-			emails = (await BlockReadingAndResettingEmails(sut)).ToList();
+							
+			emails = 
+				(await GetEmails(sut, s => s.GetEmailsAndReset(), () => SendEmailsAsync (sut, msg))).ToList();
+			
 			Assert.That(emails.Count, Is.EqualTo(1));
 		}	
 
 		[Test]
+		[Timeout(1000)]
 		public async Task Should_return_multiple_emails_when_sent_from_same_connection()
 		{
 			var sut = GetSut();
@@ -123,26 +126,33 @@ namespace Tests
 			msg2.Subject = "subject2";
 			msg2.Body = new TextPart("plain") { Text = "body2" };
 
-			await SendEmailsAsync (sut, msg, msg2);
+			using (var countdown = new CountdownEvent(2))
+			using (sut.EmailReceived.Subscribe(actual =>
+				{					
+					countdown.Signal();
+				}))
+			{
+				await SendEmailsAsync (sut, msg, msg2);
+				countdown.Wait ();
 
-			var emails = (await BlockReadingEmails(sut, emailCount: 2)).ToList();
+				var emails = sut.GetEmails ().ToList();
 
-			Assert.That(emails.Count, Is.EqualTo(2));
+				Assert.That(emails.Count, Is.EqualTo(2));
 
-			AssertEmailsAreEqual(emails[0], msg);
-			AssertEmailsAreEqual(emails[1], msg2);
+				AssertEmailsAreEqual(emails[0], msg);
+				AssertEmailsAreEqual(emails[1], msg2);
+			}
 		}
 
 		[Test]
+		[Timeout(1000)]
 		public async Task Should_return_empty_list_when_body_is_empty()
 		{
 			var sut = GetSut ();
 
 			var msg = CreateMessage (body: string.Empty);
 
-			await SendEmailsAsync (sut, msg);
-
-			var emails = await BlockReadingEmails (sut);
+			var emails = await GetEmails(sut, s => s.GetEmails(), () => SendEmailsAsync(sut, msg));
 
 			var actual = emails.Single ();
 
@@ -150,15 +160,14 @@ namespace Tests
 		}
 
 		[Test]
+		[Timeout(1000)]
 		public async Task Should_return_empty_string_when_subject_is_not_provided()
 		{
 			var sut = GetSut ();
 
 			var msg = CreateMessage (subject:null);
 
-			await SendEmailsAsync (sut, msg);
-
-			var emails = await BlockReadingEmails (sut);
+			var emails = await GetEmails (sut, s => s.GetEmails (), () => SendEmailsAsync (sut, msg));
 
 			var actual = emails.Single ();
 
@@ -166,6 +175,7 @@ namespace Tests
 		}
 
 		[Test]
+		[Timeout(1000)]
 		public async Task Should_return_multiple_from_addresses()
 		{
 			var sut = GetSut ();
@@ -174,9 +184,7 @@ namespace Tests
 			msg.From.Add(new MailboxAddress("","from2@a.com"));
 			Assert.That (msg.From.Count, Is.EqualTo (2));
 
-			await SendEmailsAsync (sut, msg);
-
-			var emails = await BlockReadingEmails (sut);
+			var emails = await GetEmails (sut, s => s.GetEmails (), () => SendEmailsAsync (sut, msg));
 
 			var actual = emails.Single ();
 
@@ -184,6 +192,7 @@ namespace Tests
 		}	
 
 		[Test]
+		[Timeout(1000)]
 		public async Task Should_return_multiple_to_addresses()
 		{
 			var sut = GetSut ();
@@ -192,9 +201,7 @@ namespace Tests
 			msg.To.Add(new MailboxAddress("","to2@b.com"));
 			Assert.That (msg.To.Count, Is.EqualTo (2));
 
-			await SendEmailsAsync (sut, msg);
-
-			var emails = await BlockReadingEmails (sut);
+			var emails = await GetEmails (sut, s => s.GetEmails (), () => SendEmailsAsync (sut, msg));
 
 			var actual = emails.Single ();
 
@@ -209,15 +216,14 @@ namespace Tests
 		[TestCase("MIME-Version")]
 		[TestCase("Priority")]
 		[TestCase("Date")]
+		[Timeout(1000)]
 		public async Task Should_not_overwrite_headers_from_body(string field)
 		{
 			var sut = GetSut ();
 
 			var msg = CreateMessage(body: field + ": overwritten");
 
-			await SendEmailsAsync (sut, msg);
-
-			var emails = await BlockReadingEmails (sut);
+			var emails = await GetEmails (sut, s => s.GetEmails (), () => SendEmailsAsync (sut, msg));
 
 			var actual = emails.Single ();
 
@@ -225,6 +231,7 @@ namespace Tests
 		}
 
 		[Test]
+		[Timeout(1000)]
 		public async Task Should_forward_emails()
 		{
 			var forwardServer = new Server (RandomPortNumber());
@@ -232,9 +239,7 @@ namespace Tests
 
 			var msg = CreateMessage ();
 
-			await SendEmailsAsync (sut, msg);
-
-			var emails = await BlockReadingEmails (forwardServer, retryCount: 3);
+			var emails = await GetEmails (forwardServer, s => s.GetEmails (), () => SendEmailsAsync (sut, msg));
 
 			var actual = emails.Single ();
 
@@ -288,30 +293,6 @@ namespace Tests
 			CollectionAssert.AreEqual (expected.Body, actual.Body);
 		}
 
-		private static Task<IEnumerable<SMTP.EMail>> BlockReadingEmails(Server sut, int emailCount = 1, int retryCount = 1)
-		{
-			return BlockReadingEmails (sut.GetEmails, emailCount: emailCount, retryCount: retryCount);
-		}
-
-		private static Task<IEnumerable<SMTP.EMail>> BlockReadingAndResettingEmails(Server sut, int emailCount = 1, int retryCount = 1)
-		{
-			return BlockReadingEmails (sut.GetEmailsAndReset, emailCount: emailCount, retryCount: retryCount);
-		}
-
-		private static async Task<IEnumerable<SMTP.EMail>> BlockReadingEmails(Func<IEnumerable<SMTP.EMail>> sut, int emailCount = 1, int retryCount = 1)
-		{
-			if (retryCount < 0)
-				throw new Exception ("Emails weren't found within the given retryCount");
-
-			var emails = sut();
-
-			if (emails.Count() >= emailCount)
-				return emails;
-
-			await Task.Delay (25);
-			return await BlockReadingEmails (sut, emailCount, retryCount - 1);
-		}
-
 		private static readonly Random Rand = new Random();
 
 		static int RandomPortNumber ()
@@ -322,6 +303,24 @@ namespace Tests
 		private static Server GetSut ()
 		{
 			return new Server (RandomPortNumber ());
+		}
+
+		private static async Task<IEnumerable<SMTP.EMail>> GetEmails(
+			SMTP.Server sut, 
+			Func<SMTP.Server, IEnumerable<SMTP.EMail>> getEmailsFunc, 
+			params Func<Task>[] sendEmails)
+		{
+			using (var countdown = new CountdownEvent(sendEmails.Count()))
+			using (sut.EmailReceived.Subscribe(actual =>
+				{					
+					countdown.Signal();
+				}))
+			{
+				foreach (var t in sendEmails)
+					await t();
+				countdown.Wait ();
+				return getEmailsFunc(sut);
+			}
 		}
 
 	}
