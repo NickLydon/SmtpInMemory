@@ -15,8 +15,10 @@ namespace Tests
 {
 	public class ServerTests
 	{		
+		const int TIMEOUT = 2000;
+
 		[Test]
-		[Timeout(1000)]
+		[Timeout(TIMEOUT)]
 		public void Should_return_empty_list_when_no_emails_sent()
 		{
 			var sut = GetSut ();
@@ -27,7 +29,7 @@ namespace Tests
 		}
 
 		[Test]
-		[Timeout(1000)]
+		[Timeout(TIMEOUT)]
 		public async Task Should_return_email_when_email_sent()
 		{
 			var sut = GetSut ();
@@ -42,7 +44,7 @@ namespace Tests
 		}
 
         [Test]
-		[Timeout(1000)]
+		[Timeout(TIMEOUT)]
 		public async Task Should_raise_email_received_event()
         {
             var sut = GetSut();
@@ -62,7 +64,7 @@ namespace Tests
         }
 
         [Test]
-		[Timeout(1000)]
+		[Timeout(TIMEOUT)]
 		public async Task Should_return_multiple_emails_when_sent()
 		{
 			var sut = GetSut ();
@@ -89,7 +91,7 @@ namespace Tests
 		}
 
 		[Test]
-		[Timeout(1000)]
+		[Timeout(TIMEOUT)]
 		public async Task Should_be_able_to_reset_email_store()
 		{
 			var sut = GetSut ();
@@ -109,7 +111,7 @@ namespace Tests
 		}	
 
 		[Test]
-		[Timeout(1000)]
+		[Timeout(TIMEOUT)]
 		public async Task Should_return_multiple_emails_when_sent_from_same_connection()
 		{
 			var sut = GetSut();
@@ -145,7 +147,7 @@ namespace Tests
 		}
 
 		[Test]
-		[Timeout(1000)]
+		[Timeout(TIMEOUT)]
 		public async Task Should_return_empty_list_when_body_is_empty()
 		{
 			var sut = GetSut ();
@@ -160,7 +162,7 @@ namespace Tests
 		}
 
 		[Test]
-		[Timeout(1000)]
+		[Timeout(TIMEOUT)]
 		public async Task Should_return_empty_string_when_subject_is_not_provided()
 		{
 			var sut = GetSut ();
@@ -175,7 +177,7 @@ namespace Tests
 		}
 
 		[Test]
-		[Timeout(1000)]
+		[Timeout(TIMEOUT)]
 		public async Task Should_return_multiple_from_addresses()
 		{
 			var sut = GetSut ();
@@ -192,7 +194,7 @@ namespace Tests
 		}	
 
 		[Test]
-		[Timeout(1000)]
+		[Timeout(TIMEOUT)]
 		public async Task Should_return_multiple_to_addresses()
 		{
 			var sut = GetSut ();
@@ -216,7 +218,7 @@ namespace Tests
 		[TestCase("MIME-Version")]
 		[TestCase("Priority")]
 		[TestCase("Date")]
-		[Timeout(1000)]
+		[Timeout(TIMEOUT)]
 		public async Task Should_not_overwrite_headers_from_body(string field)
 		{
 			var sut = GetSut ();
@@ -231,7 +233,7 @@ namespace Tests
 		}
 
 		[Test]
-		[Timeout(1000)]
+		[Timeout(TIMEOUT)]
 		public async Task Should_forward_emails()
 		{
 			var forwardServer = new Server (RandomPortNumber());
@@ -297,7 +299,7 @@ namespace Tests
 
 		static int RandomPortNumber ()
 		{
-			return Rand.Next (1000, 9001);
+			return Rand.Next (TIMEOUT, 9001);
 		}
 
 		private static Server GetSut ()
