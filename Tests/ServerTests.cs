@@ -15,7 +15,7 @@ namespace Tests
 {
 	public class ServerTests
 	{		
-		const int TIMEOUT = 2000;
+		const int TIMEOUT = 3000;
 
 		[Test]
 		[Timeout(TIMEOUT)]
