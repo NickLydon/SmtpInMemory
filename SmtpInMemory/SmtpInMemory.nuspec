@@ -2,14 +2,14 @@
 <package xmlns="http://schemas.microsoft.com/packaging/2010/07/nuspec.xsd">
   <metadata>
     <id>SmtpInMemory</id>
-    <version>2.0.0</version>
+    <version>2.1.0</version>
     <authors>Nicholas Lydon</authors>
     <projectUrl>http://github.com/NickLydon/SmtpInMemory</projectUrl>
     <title>SmtpInMemory - embeddable SMTP server in .NET</title>
     <description>Library written in F# to receive emails. Can be used from C# or F# in end-to-end tests to ensure emails are being sent correctly.</description>
     <tags>smtp email f# fsharp smtpserver</tags>
     <licenseUrl>https://opensource.org/licenses/MIT</licenseUrl>
-    <releaseNotes>Improved received email event notification by turning it into an Rx stream</releaseNotes>
+    <releaseNotes>Implements IDisposable to clean up resources</releaseNotes>
     <dependencies>
     </dependencies> 
   </metadata>
