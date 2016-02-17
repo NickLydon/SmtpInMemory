@@ -4,6 +4,8 @@ open System.Net.Sockets
 open System.Net
 open System.IO
 open System
+open System.Threading
+open System.Threading.Tasks
 open System.Reactive
 open System.Reactive.Subjects
 open System.Reactive.Linq
@@ -73,65 +75,74 @@ type private ReaderWriter (sr:StreamReader, wr:StreamWriter) =
                     sr.Dispose()
                     wr.Dispose()
 
-let private receiveEmails (listener:TcpListener) = async {
+let private receiveEmails (listener:TcpListener) (cancellation:CancellationToken) = async {
+    let cancellationTask = TaskCompletionSource()
+    
+    use cancellationEvent = cancellation.Register(fun() -> cancellationTask.SetCanceled())
 
-    use! client = listener.AcceptTcpClientAsync() |> Async.AwaitTask
+    let acceptClientTask = listener.AcceptTcpClientAsync()
+    do! Task.WhenAny([ cancellationTask.Task; acceptClientTask ]) |> Async.AwaitTask |> Async.Ignore
+    
+    if cancellationTask.Task.IsCanceled
+    then return None
+    else 
+        use! client = acceptClientTask |> Async.AwaitTask
+    
+        use stream = client.GetStream()
 
-    use stream = client.GetStream()
+        use recorder =     
+            let sr = new StreamReader(stream)
+            let wr = new StreamWriter(stream)
+            wr.NewLine <- "\r\n"
+            wr.AutoFlush <- true
+            new ReaderWriter(sr, wr)
 
-    use recorder =     
-        let sr = new StreamReader(stream)
-        let wr = new StreamWriter(stream)
-        wr.NewLine <- "\r\n"
-        wr.AutoFlush <- true
-        new ReaderWriter(sr, wr)
+        let writeline = recorder.Write
+        let readline = recorder.Read
 
-    let writeline = recorder.Write
-    let readline = recorder.Read
-
-    writeline "220 localhost -- Fake proxy server"
+        writeline "220 localhost -- Fake proxy server"
    
-    let rec readlines emailBuilder emails =
-        let line = readline()
+        let rec readlines emailBuilder emails =
+            let line = readline()
 
-        match line with
-        | "DATA" -> 
-            writeline "354 Start input, end data with <CRLF>.<CRLF>"
+            match line with
+            | "DATA" -> 
+                writeline "354 Start input, end data with <CRLF>.<CRLF>"
 
-            let readUntilTerminator() =
-                ()
-                |> Seq.unfold(fun() -> Some(readline(),())) 
-                |> Seq.takeWhile (fun line -> set [null;".";""] |> Set.contains line |> not)
+                let readUntilTerminator() =
+                    ()
+                    |> Seq.unfold(fun() -> Some(readline(),())) 
+                    |> Seq.takeWhile (fun line -> set [null;".";""] |> Set.contains line |> not)
 
-            let header = 
-                readUntilTerminator()
-                |> Seq.fold(fun header line ->                    
-                    let header = { header with Header.Headers=line::header.Headers }
-                    let header =
-                        match line with
-                        | From l -> { header with From = l }
-                        | To l -> { header with To = l }
-                        | Subject l -> { header with Subject = Some l }
-                        | _ -> header
-                    header
-                ) emailBuilder.Header
+                let header = 
+                    readUntilTerminator()
+                    |> Seq.fold(fun header line ->                    
+                        let header = { header with Header.Headers=line::header.Headers }
+                        let header =
+                            match line with
+                            | From l -> { header with From = l }
+                            | To l -> { header with To = l }
+                            | Subject l -> { header with Subject = Some l }
+                            | _ -> header
+                        header
+                    ) emailBuilder.Header
             
-            let body = readUntilTerminator() |> List.ofSeq
+                let body = readUntilTerminator() |> List.ofSeq
                       
-            readlines emptyEmail ({emailBuilder with Header = header; Body = body}::emails)
-        | "QUIT" -> 
-            writeline "250 OK"
-            emails
-        | rest ->
-            writeline "250 OK"
-            readlines emailBuilder emails
+                readlines emptyEmail ({emailBuilder with Header = header; Body = body}::emails)
+            | "QUIT" -> 
+                writeline "250 OK"
+                emails
+            | rest ->
+                writeline "250 OK"
+                readlines emailBuilder emails
                 
-    let newMessages = readlines emptyEmail []
-    let recorded = recorder.GetAll()
+        let newMessages = readlines emptyEmail []
+        let recorded = recorder.GetAll()
 
-    client.Close()
+        client.Close()
 
-    return newMessages,recorded }
+        return (newMessages,recorded) |> Some }
 
 type public ForwardServerConfig = { Port: int; Host: string }
 
@@ -155,30 +166,33 @@ let private forwardMessages forwardServer messages =
         client.Close()
     }
 
-let private smtpAgent (cachingAgent: Agent<CheckInbox>) port forwardServer = 
+let private smtpAgent (cachingAgent: Agent<CheckInbox>) port forwardServer (cancellation:CancellationToken) = 
     Agent.Start(fun _ -> 
         let endPoint = new IPEndPoint(IPAddress.Any, port)
         let listener = new TcpListener(endPoint)
         listener.Start()
 
         let rec loop() = async {
-            let! newMessages,recorded = receiveEmails listener
-            newMessages
-            |> List.map(fun newMessage -> 
-                {   From=newMessage.Header.From
-                    To=newMessage.Header.To
-                    Subject=newMessage.Header.Subject |> Option.fold(fun s t -> t) ""
-                    Body=newMessage.Body
-                    Headers=newMessage.Header.Headers   }
-                |> Add
-            )
-            |> List.iter cachingAgent.Post
+            let! emailResult = receiveEmails listener cancellation
+            match emailResult with
+            | None -> listener.Stop()    
+            | Some(newMessages,recorded) ->            
+                newMessages
+                |> List.map(fun newMessage -> 
+                    {   From=newMessage.Header.From
+                        To=newMessage.Header.To
+                        Subject=newMessage.Header.Subject |> Option.fold(fun s t -> t) ""
+                        Body=newMessage.Body
+                        Headers=newMessage.Header.Headers   }
+                    |> Add
+                )
+                |> List.iter cachingAgent.Post
 
-            match forwardServer with
-            | Some config -> do! forwardMessages config recorded
-            | _ -> ()
+                match forwardServer with
+                | Some config -> do! forwardMessages config recorded
+                | _ -> ()
 
-            return! loop() 
+            if cancellation.IsCancellationRequested then listener.Stop() else return! loop() 
         }
 
         loop())
@@ -201,13 +215,19 @@ let private cachingAgent emailReceived =
 
 let public NoForwardServer = { Port = -1; Host = "" }
 
-type public Server(port, thruServer) =
+type public Server(port, thruServer) =    
+    let cancellationSource = new CancellationTokenSource()
     let emailReceivedEvent = new Subject<EMail>()
     let cache = cachingAgent emailReceivedEvent.OnNext
-    let server = smtpAgent cache port (if thruServer = NoForwardServer then None else Some thruServer)
+    let server = smtpAgent cache port (if thruServer = NoForwardServer then None else Some thruServer) cancellationSource.Token
 
-    new(port) = Server (port, NoForwardServer)
-    new() = Server (25, NoForwardServer)
+    new(port) = new Server (port, NoForwardServer)
+    new() = new Server (25, NoForwardServer)
+        
+    interface IDisposable with
+        member x.Dispose() = 
+            cancellationSource.Cancel(false)
+            cancellationSource.Dispose()
 
     member this.GetEmails() = cache.PostAndReply Get
     member this.GetEmailsAndReset() = cache.PostAndReply GetAndReset
